@@ -2,3 +2,5 @@
 .gitignore
 xcuserdata
 xcshareddata
+*.bridgesupport
+build-iPhoneSimulator
