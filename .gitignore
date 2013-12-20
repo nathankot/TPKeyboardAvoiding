@@ -4,3 +4,4 @@ xcuserdata
 xcshareddata
 *.bridgesupport
 build-iPhoneSimulator
+build-iPhoneOS
