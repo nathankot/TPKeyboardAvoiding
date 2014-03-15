@@ -47,10 +47,6 @@ static const int kStateKey;
     }
     
     UIView *firstResponder = [self TPKeyboardAvoiding_findFirstResponderBeneathView:self];
-    if ( !firstResponder ) {
-        // No child view is the first responder - nothing to do here
-        return;
-    }
     
     state.keyboardRect = [self convertRect:[[[notification userInfo] objectForKey:_UIKeyboardFrameEndUserInfoKey] CGRectValue] fromView:nil];
     state.keyboardVisible = YES;
@@ -60,7 +56,7 @@ static const int kStateKey;
     if ( [self isKindOfClass:[TPKeyboardAvoidingScrollView class]] ) {
         state.priorContentSize = self.contentSize;
         
-        if ( self.constraints.count == 0 && CGSizeEqualToSize(self.contentSize, CGSizeZero) ) {
+        if ( CGSizeEqualToSize(self.contentSize, CGSizeZero) ) {
             // Set the content size, if it's not set. Do not set content size explicitly if auto-layout
             // is being used to manage subviews
             self.contentSize = [self TPKeyboardAvoiding_calculatedContentSizeFromSubviewFrames];
@@ -71,13 +67,17 @@ static const int kStateKey;
     [UIView beginAnimations:nil context:NULL];
     [UIView setAnimationCurve:[[[notification userInfo] objectForKey:UIKeyboardAnimationCurveUserInfoKey] intValue]];
     [UIView setAnimationDuration:[[[notification userInfo] objectForKey:UIKeyboardAnimationDurationUserInfoKey] floatValue]];
-
+    
     self.contentInset = [self TPKeyboardAvoiding_contentInsetForKeyboard];
-    CGFloat viewableHeight = self.bounds.size.height - self.contentInset.top - self.contentInset.bottom;
-    [self setContentOffset:CGPointMake(self.contentOffset.x,
-                                       [self TPKeyboardAvoiding_idealOffsetForView:firstResponder
-                                                             withViewingAreaHeight:viewableHeight])
-                  animated:NO];
+    
+    if ( firstResponder ) {
+        CGFloat viewableHeight = self.bounds.size.height - self.contentInset.top - self.contentInset.bottom;
+        [self setContentOffset:CGPointMake(self.contentOffset.x,
+                                           [self TPKeyboardAvoiding_idealOffsetForView:firstResponder
+                                                                 withViewingAreaHeight:viewableHeight])
+                      animated:NO];
+    }
+    
     self.scrollIndicatorInsets = self.contentInset;
     
     [UIView commitAnimations];
@@ -135,7 +135,8 @@ static const int kStateKey;
     [self TPKeyboardAvoiding_findTextFieldAfterTextField:firstResponder beneathView:self minY:&minY foundView:&view];
     
     if ( view ) {
-        [view becomeFirstResponder];
+        [firstResponder resignFirstResponder];
+        [view performSelector:@selector(becomeFirstResponder) withObject:nil afterDelay:0.0];
         return YES;
     }
     
@@ -203,19 +204,31 @@ static const int kStateKey;
 }
 
 -(CGSize)TPKeyboardAvoiding_calculatedContentSizeFromSubviewFrames {
+    
+    BOOL wasShowingVerticalScrollIndicator = self.showsVerticalScrollIndicator;
+    BOOL wasShowingHorizontalScrollIndicator = self.showsHorizontalScrollIndicator;
+    
+    self.showsVerticalScrollIndicator = NO;
+    self.showsHorizontalScrollIndicator = NO;
+    
     CGRect rect = CGRectZero;
     for ( UIView *view in self.subviews ) {
         rect = CGRectUnion(rect, view.frame);
     }
     rect.size.height += kCalculatedContentPadding;
+    
+    self.showsVerticalScrollIndicator = wasShowingVerticalScrollIndicator;
+    self.showsHorizontalScrollIndicator = wasShowingHorizontalScrollIndicator;
+    
     return rect.size;
 }
+
 
 - (UIEdgeInsets)TPKeyboardAvoiding_contentInsetForKeyboard {
     TPKeyboardAvoidingState *state = self.keyboardAvoidingState;
     UIEdgeInsets newInset = self.contentInset;
     CGRect keyboardRect = state.keyboardRect;
-    newInset.bottom = keyboardRect.size.height - (CGRectGetMaxY(keyboardRect) - self.bounds.size.height);
+    newInset.bottom = keyboardRect.size.height - (CGRectGetMaxY(keyboardRect) - CGRectGetMaxY(self.bounds));
     return newInset;
 }
 
@@ -252,19 +265,16 @@ static const int kStateKey;
 }
 
 - (void)TPKeyboardAvoiding_initializeView:(UIView*)view {
-    if ( ([view isKindOfClass:[UITextField class]] || [view isKindOfClass:[UITextView class]]) && (![(id)view delegate] || [(id)view delegate] == self) ) {
+    if ( [view isKindOfClass:[UITextField class]] && ((UITextField*)view).returnKeyType == UIReturnKeyDefault && (![(id)view delegate] || [(id)view delegate] == self) ) {
         [(id)view setDelegate:self];
+        UIView *otherView = nil;
+        CGFloat minY = CGFLOAT_MAX;
+        [self TPKeyboardAvoiding_findTextFieldAfterTextField:view beneathView:self minY:&minY foundView:&otherView];
         
-        if ( [view isKindOfClass:[UITextField class]] && ((UITextField*)view).returnKeyType == UIReturnKeyDefault ) {
-            UIView *otherView = nil;
-            CGFloat minY = CGFLOAT_MAX;
-            [self TPKeyboardAvoiding_findTextFieldAfterTextField:view beneathView:self minY:&minY foundView:&otherView];
-            
-            if ( otherView ) {
-                ((UITextField*)view).returnKeyType = UIReturnKeyNext;
-            } else {
-                ((UITextField*)view).returnKeyType = UIReturnKeyDone;
-            }
+        if ( otherView ) {
+            ((UITextField*)view).returnKeyType = UIReturnKeyNext;
+        } else {
+            ((UITextField*)view).returnKeyType = UIReturnKeyDone;
         }
     }
 }
